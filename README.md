@@ -42,7 +42,7 @@ Model Context Protocol (MCP) is an open protocol that enables seamless integrati
 Start the server with:
 
 ```bash
-python notehub_mcp_server.py
+python notehub.py
 ```
 
 The MCP server will run using stdio as the transport layer, which is the standard transport for most MCP clients.
@@ -71,14 +71,13 @@ Edit or create `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ```json
 {
-  "mcpServers": [
-    {
-      "name": "notehub",
+  "mcpServers": {
+    "notehub": {
       "command": "python",
-      "args": ["/path/to/your/notehub_mcp_server.py"],
+      "args": ["/path/to/your/notehub.py"],
       "availableTo": ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-5-sonnet-20240307", "claude-3-haiku-20240307"]
     }
-  ]
+  }
 }
 ```
 
