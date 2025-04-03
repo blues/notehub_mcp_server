@@ -36,7 +36,7 @@ async def get_session_token(username: str, password: str) -> str:
     """
     # Check if we have a valid cached token
     cache_key = f"{username}:{password}"
-    if cache_key in token_cache and token_cache[cache_key].get("expires_at", 0) > asyncio.get_event_loop().time():
+    if cache_key in token_cache:
         return token_cache[cache_key]["token"]
 
     # Configure the API client
@@ -56,12 +56,9 @@ async def get_session_token(username: str, password: str) -> str:
         try:
             login_response = api_instance.login(login_request)
 
-            # Cache the token with expiration (30 minutes)
-            # Adding a 1-minute buffer to ensure we refresh before expiration
-            expires_at = asyncio.get_event_loop().time() + (30 * 60) - 60
+            # Cache the token
             token_cache[cache_key] = {
-                "token": login_response.session_token,
-                "expires_at": expires_at
+                "token": login_response.session_token
             }
 
             return login_response.session_token
