@@ -74,7 +74,12 @@ Edit or create `~/Library/Application Support/Claude/claude_desktop_config.json`
   "mcpServers": {
     "notehub": {
       "command": "python",
-      "args": ["/path/to/your/notehub.py"],
+      "args": [
+        "--directory",
+        "/path/to/your/mcp-server",
+        "run",
+        "notehub.py"
+      ],
       "availableTo": ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-5-sonnet-20240307", "claude-3-haiku-20240307"]
     }
   }
