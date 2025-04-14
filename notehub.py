@@ -112,7 +112,7 @@ async def get_project_devices(
         username: Your Notehub account email
         password: Your Notehub account password
         project_uid: UID of the Notehub project
-        fleet_uid: (Optional) Filter by a specific fleet UID
+        fleet_uid: (Optional) Filter by specific fleet UIDs
         tag: (Optional) Filter by device tags
         device_uid: (Optional) Filter by specific device UID
 
