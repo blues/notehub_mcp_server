@@ -101,7 +101,7 @@ async def get_project_devices(
     username: str,
     password: str,
     project_uid: str,
-    fleet_uid: Optional[str] = None,
+    fleet_uid: Optional[List[str]] = None,
     tag: Optional[List[str]] = None,
     device_uid: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -112,7 +112,7 @@ async def get_project_devices(
         username: Your Notehub account email
         password: Your Notehub account password
         project_uid: UID of the Notehub project
-        fleet_uid: (Optional) Filter by specific fleet UID
+        fleet_uid: (Optional) Filter by a specific fleet UID
         tag: (Optional) Filter by device tags
         device_uid: (Optional) Filter by specific device UID
 
@@ -129,14 +129,20 @@ async def get_project_devices(
         )
         configuration.api_key["api_key"] = token
 
+        # Prepare parameters, filtering out None values
+        params = {
+            "tag": tag,
+            "device_uid": device_uid
+        }
+        filtered_params = {k: v for k, v in params.items() if v is not None}
+
         # Get devices
         with notehub_py.ApiClient(configuration) as api_client:
             api_instance = DeviceApi(api_client)
             devices_response = api_instance.get_project_devices(
                 project_uid,
                 fleet_uid=fleet_uid,
-                tag=tag,
-                device_uid=device_uid
+                **filtered_params
             )
 
             return devices_response.to_dict()
@@ -182,6 +188,7 @@ async def get_project_events(
         fleet_uid: (Optional) Filter by specific fleet UID
         files: (Optional) Filter by specific files like "_health.qo" or "data.qo"
         select_fields: (Optional) Comma-separated list of fields to return from the JSON payload
+
     Returns:
         A dictionary with events information
     """
@@ -195,24 +202,30 @@ async def get_project_events(
         )
         configuration.api_key["api_key"] = token
 
+        # Prepare parameters, filtering out None values
+        params = {
+            "device_uid": device_uid,
+            "serial_number": serial_number,
+            "page_size": page_size,
+            "page_num": page_num,
+            "notecard_firmware": notecard_firmware,
+            "location": location,
+            "host_firmware": host_firmware,
+            "host_name": host_name,
+            "product_uid": product_uid,
+            "sku": sku,
+            "fleet_uid": fleet_uid,
+            "files": files,
+            "select_fields": select_fields
+        }
+        filtered_params = {k: v for k, v in params.items() if v is not None}
+
         # Get events
         with notehub_py.ApiClient(configuration) as api_client:
             api_instance = EventApi(api_client)
             events_response = api_instance.get_project_events(
                 project_uid,
-                device_uid=device_uid,
-                serial_number=serial_number,
-                page_size=page_size,
-                page_num=page_num,
-                notecard_firmware=notecard_firmware,
-                location=location,
-                host_firmware=host_firmware,
-                host_name=host_name,
-                product_uid=product_uid,
-                sku=sku,
-                fleet_uid=fleet_uid,
-                files=files,
-                select_fields=select_fields
+                **filtered_params
             )
 
             return events_response.to_dict()
