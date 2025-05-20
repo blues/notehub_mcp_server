@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import asyncio
+import time
+import os
 from typing import Dict, Any, List, Optional
+from dotenv import load_dotenv
 
-# MCP libraries
 from mcp.server.fastmcp import FastMCP
 
 # Notehub SDK
@@ -17,69 +19,151 @@ from notehub_py.api.event_api import EventApi
 # Initialize the FastMCP server
 mcp = FastMCP("notehub")
 
+# Load environment variables from .env file
+load_dotenv()
+
 # Notehub API base URL
 NOTEHUB_API_BASE = "https://api.notefile.net"
 
-# Token cache for performance
-token_cache = {}
+# Token cache configuration
+TOKEN_EXPIRY_SECONDS = 3600
+token_cache: Dict[str, Dict[str, Any]] = {}
+current_credentials: Optional[Dict[str, str]] = None
 
-async def get_session_token(username: str, password: str) -> str:
+def set_credentials(username: str, password: str):
     """
-    Get an X-Session-Token from Notehub API using username and password.
+    Set the credentials to use for Notehub API authentication.
 
     Args:
         username: Your Notehub account email
         password: Your Notehub account password
+    """
+    global current_credentials
+    current_credentials = {
+        "username": username,
+        "password": password
+    }
+
+def load_credentials_from_env():
+    """
+    Load credentials from environment variables if they exist.
+    Returns True if credentials were loaded, False otherwise.
+    """
+    username = os.getenv("NOTEHUB_USERNAME")
+    password = os.getenv("NOTEHUB_PASSWORD")
+
+    if username and password:
+        set_credentials(username, password)
+        return True
+    return False
+
+def clear_expired_tokens():
+    """Clear expired tokens from the cache."""
+    current_time = time.time()
+    expired_keys = [
+        key for key, value in token_cache.items()
+        if current_time - value["timestamp"] > TOKEN_EXPIRY_SECONDS
+    ]
+    for key in expired_keys:
+        del token_cache[key]
+
+async def get_session_token() -> str:
+    """
+    Get an X-Session-Token from Notehub API using cached credentials.
 
     Returns:
         The X-Session-Token for API authentication
+
+    Raises:
+        Exception: If credentials haven't been set or token retrieval fails
     """
-    # Check if we have a valid cached token
-    cache_key = f"{username}:{password}"
+    if not current_credentials:
+        raise Exception("Credentials not set. Call set_credentials() first.")
+
+    clear_expired_tokens()
+
+    cache_key = f"{current_credentials['username']}:{current_credentials['password']}"
     if cache_key in token_cache:
         return token_cache[cache_key]["token"]
 
-    # Configure the API client
     configuration = notehub_py.Configuration(
         host=NOTEHUB_API_BASE
     )
 
-    # Create a login request
     login_request = LoginRequest(
-        username=username,
-        password=password
+        username=current_credentials["username"],
+        password=current_credentials["password"]
     )
 
-    # Get a new token
     with notehub_py.ApiClient(configuration) as api_client:
         api_instance = AuthorizationApi(api_client)
         try:
             login_response = api_instance.login(login_request)
 
-            # Cache the token
+            # Cache the token with timestamp
             token_cache[cache_key] = {
-                "token": login_response.session_token
+                "token": login_response.session_token,
+                "timestamp": time.time()
             }
 
             return login_response.session_token
         except notehub_py.ApiException as e:
             raise Exception(f"Error getting session token: {str(e)}")
 
-@mcp.tool("getProjects")
-async def get_projects(username: str, password: str) -> Dict[str, Any]:
+@mcp.tool("getCredentials")
+async def get_credentials() -> Dict[str, Any]:
     """
-    Get all Notehub projects accessible with the provided credentials.
+    Get the current credentials.
+    This should always be called before using any other functions.
+    """
+    if current_credentials:
+        return {"status": "success", "message": "Credentials are already set programmatically"}
+    if load_credentials_from_env():
+        return {"status": "success", "message": "Credentials loaded from environment variables"}
+    return {"status": "error", "message": "Credentials could not be loaded from environment variables, use setCredentials to manually set them"}
+
+
+@mcp.tool("setCredentials")
+async def set_credentials_tool(username: str, password: str) -> Dict[str, Any]:
+    """
+    Set the credentials to use for Notehub API authentication.
+    This should only be called if an authentication request fails, or if the credentials are not set in the environment variables.
 
     Args:
         username: Your Notehub account email
         password: Your Notehub account password
 
     Returns:
+        A dictionary indicating success or failure
+    """
+    try:
+        # If no credentials provided, try to load from environment
+        if not username and not password:
+            if load_credentials_from_env():
+                return {"status": "success", "message": "Credentials loaded from environment variables"}
+            return {"status": "error", "message": "No credentials provided and none found in environment variables"}
+
+        # Use provided credentials
+        set_credentials(username, password)
+        # Verify credentials by getting a token
+    except ValueError as ve:
+        return {"status": "error", "message": f"Invalid input: {str(ve)}"}
+    except ConnectionError as ce:
+        return {"status": "error", "message": f"Connection error: {str(ce)}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool("getProjects")
+async def get_projects() -> Dict[str, Any]:
+    """
+    Get all Notehub projects accessible with the current credentials.
+
+    Returns:
          A dictionary with projects information
     """
     try:
         # Get session token
-        token = await get_session_token(username, password)
+        token = await get_session_token()
 
         # Configure the API client
         configuration = notehub_py.Configuration(
@@ -98,8 +182,6 @@ async def get_projects(username: str, password: str) -> Dict[str, Any]:
 
 @mcp.tool("getDevices")
 async def get_project_devices(
-    username: str,
-    password: str,
     project_uid: str,
     fleet_uid: Optional[List[str]] = None,
     tag: Optional[List[str]] = None,
@@ -109,8 +191,6 @@ async def get_project_devices(
     Get all devices for a specific Notehub project with optional filtering.
 
     Args:
-        username: Your Notehub account email
-        password: Your Notehub account password
         project_uid: UID of the Notehub project
         fleet_uid: (Optional) Filter by specific fleet UIDs
         tag: (Optional) Filter by device tags
@@ -121,7 +201,7 @@ async def get_project_devices(
     """
     try:
         # Get session token
-        token = await get_session_token(username, password)
+        token = await get_session_token()
 
         # Configure the API client
         configuration = notehub_py.Configuration(
@@ -151,8 +231,6 @@ async def get_project_devices(
 
 @mcp.tool("getEvents")
 async def get_project_events(
-    username: str,
-    password: str,
     project_uid: str,
     device_uid: Optional[List[str]] = None,
     serial_number: Optional[List[str]] = None,
@@ -172,8 +250,6 @@ async def get_project_events(
     Get events for a specific Notehub project with optional filtering.
 
     Args:
-        username: Your Notehub account email
-        password: Your Notehub account password
         project_uid: UID of the Notehub project
         device_uid: (Optional) Filter by specific device UID
         serial_number: (Optional) Filter by device serial number
@@ -194,7 +270,7 @@ async def get_project_events(
     """
     try:
         # Get session token
-        token = await get_session_token(username, password)
+        token = await get_session_token()
 
         # Configure the API client
         configuration = notehub_py.Configuration(
@@ -234,20 +310,16 @@ async def get_project_events(
 
 @mcp.tool("sendNote")
 async def send_note(
-    username: str,
-    password: str,
     project_uid: str,
     device_uid: str,
     notefile_id: Optional[str] = None,
     body: Optional[Dict[str, Any]] = {},
     payload: Optional[str] = None
-) -> bool:
+) -> Dict[str, Any]:
     """
     Send a note to a specific device in a Notehub project.
 
     Args:
-        username: Your Notehub account email
-        password: Your Notehub account password
         project_uid: UID of the Notehub project
         device_uid: UID of the device
         notefile_id: (Optional) ID of the notefile
@@ -259,7 +331,7 @@ async def send_note(
     """
     try:
         # Get session token
-        token = await get_session_token(username, password)
+        token = await get_session_token()
 
         # Configure the API client
         configuration = notehub_py.Configuration(
@@ -285,10 +357,9 @@ async def send_note(
                 note=note
             )
 
-            return True
+            return {"status": "success", "message": "Note sent successfully"}
     except Exception as e:
-        print(f"Exception when calling DeviceApi->handle_note_add: {e}")
-        return False
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     # Initialize and run the server
